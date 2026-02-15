@@ -1,1 +1,1 @@
-Hi, my name is the candidate. I am a experienced professional with skills in mysql, python, java. I am interested in opportunities related to Web Development. I am passionate about learning and applying real world technologies.
+Hi, my name is the candidate. I am a experienced professional with skills in java, machine learning, streamlit. I am interested in opportunities related to Web Development. I am passionate about learning and applying real world technologies.
