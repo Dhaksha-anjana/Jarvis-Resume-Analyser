@@ -1,5 +1,6 @@
 import streamlit as st
 import pdfminer.high_level
+import re
 import os
 import json
 import plotly.graph_objects as go
@@ -52,14 +53,43 @@ jarvis_lottie = load_lottie(os.path.join(LOTTIE_DIR, "jarvis.json"))
 voice_lottie = load_lottie(os.path.join(LOTTIE_DIR, "voice.json"))
 # ---------------- VOICE OUTPUT ----------------
 def speak_js(text):
-    st.components.v1.html(f"""
+    # Strip markdown and escape quotes for JS safe parsing
+    clean_text = re.sub(r'[*_#`]', '', text)
+    clean_text = clean_text.replace('\n', ' ').replace('"', '\\"').replace("'", "\\'")
+    
+    js = f"""
+    <div style="display: flex; justify-content: flex-end; width: 100%;">
+        <button onclick="speak()" style="background-color: transparent; border: 1px solid #38bdf8; color: #38bdf8; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-family: sans-serif; font-size: 12px; font-weight: bold; transition: 0.3s;" onmouseover="this.style.backgroundColor='#38bdf8'; this.style.color='#0f172a'" onmouseout="this.style.backgroundColor='transparent'; this.style.color='#38bdf8'">
+            🔊 Listen to Jarvis
+        </button>
+    </div>
     <script>
-    var msg = new SpeechSynthesisUtterance("{text}");
-    msg.lang = "en-IN";
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(msg);
+    function speak() {{
+        window.speechSynthesis.cancel();
+        var msg = new SpeechSynthesisUtterance("{clean_text}");
+        
+        var voices = window.speechSynthesis.getVoices();
+        var jarvis = voices.find(v => v.lang === 'en-GB' && v.name.includes('Male')) || 
+                     voices.find(v => v.lang === 'en-GB' && v.name.includes('Google UK English Male')) ||
+                     voices.find(v => v.lang === 'en-GB');
+                     
+        if (jarvis) msg.voice = jarvis;
+        else msg.lang = 'en-GB';
+        
+        msg.rate = 1.0;
+        msg.pitch = 0.8;
+        window.speechSynthesis.speak(msg);
+    }}
+    
+    // Attempt auto-play, but fallback to button if browser blocks it
+    if (window.speechSynthesis.getVoices().length === 0) {{
+        window.speechSynthesis.onvoiceschanged = speak;
+    }} else {{
+        speak();
+    }}
     </script>
-    """, height=0)
+    """
+    st.components.v1.html(js, height=45)
 # ---------------- HEADER ----------------
 colA, colB = st.columns([1, 3])
 
@@ -74,7 +104,18 @@ with colB:
 with st.sidebar:
     st.title("⚙️ LLM Integration")
     st.markdown("Unlock advanced AI capabilities:")
-    api_key = st.text_input("Gemini API Key", type="password", help="Get a free key from Google AI Studio")
+    # Save/load API key across restarts
+    api_file = os.path.join(BASE_DIR, "api_key.txt")
+    loaded_key = ""
+    if os.path.exists(api_file):
+        with open(api_file, "r") as f:
+            loaded_key = f.read().strip()
+            
+    api_key = st.text_input("Gemini API Key", type="password", value=loaded_key, help="Get a free key from Google AI Studio")
+    if api_key and api_key != loaded_key:
+        with open(api_file, "w") as f:
+            f.write(api_key.strip())
+            
     if api_key:
         if validate_api_key(api_key):
             st.success("API Key Validated!")
@@ -112,7 +153,16 @@ if resume_file:
     if ats_data is not None:
         info['ats_match'] = ats_data['total']
     
-    intro_text = generate_self_intro(info)
+    cache_key = f"intro_{hash(resume_text)}"
+    if api_key:
+        if cache_key not in st.session_state:
+            with st.spinner("Jarvis is reading the resume profile..."):
+                summary_prompt = "Provide a very concise, 3-sentence summary of this exact candidate. Explicitly list their technical skills (like MERN or Python), specific internships, past companies, and project names. Speak in the third-person about the candidate, written perfectly in the voice of J.A.R.V.I.S. from Iron Man, addressing your creator. Do not use any markdown formatting like asterisks."
+                res = get_chat_response(summary_prompt, resume_text, [], api_key, stream=False)
+                st.session_state[cache_key] = res.replace("*", "").replace("#", "")
+        intro_text = st.session_state[cache_key]
+    else:
+        intro_text = generate_self_intro(info)
     col1, col2, col3 = st.columns([1.2, 1.5, 1.2])
     # -------- COLUMN 1 : SKILLS --------
     with col1:
@@ -296,10 +346,24 @@ if resume_file:
                 st.chat_message("user").write(final_prompt)
 
             with st.chat_message("assistant"):
-                with st.spinner("Thinking..."):
-                    chat_hist = st.session_state.messages[:-1]
-                    response_text = get_chat_response(final_prompt, resume_text, chat_hist, api_key)
-                    st.write(response_text)
+                chat_hist = st.session_state.messages[:-1]
+                response_stream = get_chat_response(final_prompt, resume_text, chat_hist, api_key, stream=True)
+                
+                if isinstance(response_stream, str):
+                    st.write(response_stream)
+                    response_text = response_stream
+                else:
+                    def stream_generator():
+                        for chunk in response_stream:
+                            if chunk.text:
+                                yield chunk.text
+                    try:
+                        response_text = st.write_stream(stream_generator)
+                    except Exception as e:
+                        st.write(f"Streaming error: {e}")
+                        response_text = f"Streaming error: {e}"
+                        
+                speak_js(response_text)
             
             st.session_state.messages.append({"role": "assistant", "content": response_text})
             

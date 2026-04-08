@@ -1,8 +1,7 @@
 import nltk
 import re
-from nltk.corpus import stopwords, wordnet
+from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
-from nltk.stem import WordNetLemmatizer
 from nltk import pos_tag, RegexpParser
 from nltk.util import ngrams
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -13,7 +12,6 @@ import os
 NLTK_PATH = os.path.join(os.path.dirname(__file__), "nltk_data")
 nltk.data.path.append(NLTK_PATH)
 STOPWORDS = set(stopwords.words("english"))
-lemmatizer = WordNetLemmatizer()
 
 # ---------------- SKILLS DB ----------------
 SKILLS_DB = [
@@ -42,16 +40,7 @@ def preprocess(text):
     text = re.sub(r'[^a-zA-Z0-9 ]', ' ', text)
     tokens = word_tokenize(text)
     tokens = [w for w in tokens if w not in STOPWORDS and len(w) > 2]
-    tokens = [lemmatizer.lemmatize(w) for w in tokens]  # Morphology
     return tokens
-
-# ---------------- WORDNET SYNONYMS (MODULE 3) ----------------
-def get_synonyms(word):
-    syns = set()
-    for syn in wordnet.synsets(word):
-        for l in syn.lemmas():
-            syns.add(l.name().lower())
-    return syns
 
 # ---------------- SKILL EXTRACTION (POS + CHUNKING) ----------------
 def extract_skills(text):
@@ -141,16 +130,7 @@ def ats_similarity(resume_text, jd_text):
     total = len(jd_bigrams) if jd_bigrams else 1
     bigram_score = overlap / total
 
-    # WordNet synonym boost
-    synonym_match = 0
-    for word in jd_tokens:
-        syns = get_synonyms(word)
-        if any(s in resume_tokens for s in syns):
-            synonym_match += 1
-
-    synonym_score = synonym_match / len(jd_tokens) if jd_tokens else 0
-
-    final_score = (0.5 * tfidf_score) + (0.3 * bigram_score) + (0.2 * synonym_score)
+    final_score = (0.7 * tfidf_score) + (0.3 * bigram_score)
 
     return round(final_score * 100, 2)
 
