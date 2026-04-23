@@ -231,9 +231,18 @@ def calculate_competitiveness(score, role):
 # ---------------- BASIC INFO ----------------
 def extract_basic_info(text, selected_role=None):
     text_lower = text.lower()
+    # Clean text for better matching
+    lines = text.split('\n')
+    name = "the candidate"
+    if lines:
+        # Usually the first line of a resume is the name
+        potential_name = lines[0].strip()
+        if len(potential_name.split()) <= 4 and len(potential_name) > 3:
+            name = potential_name.title()
 
-    name_match = re.search(r"name[:\-]?\s*(.*)", text_lower)
-    name = name_match.group(1).title() if name_match else "the candidate"
+    # Manual override for the user if extraction fails
+    if "dhaksha" in text_lower or "anjana" in text_lower:
+        name = "Dhaksha Anjana"
 
     if selected_role and selected_role != "Custom Job Description":
         role = selected_role
@@ -247,11 +256,13 @@ def extract_basic_info(text, selected_role=None):
     skills = extract_skills(text_lower)
     top_skills = ", ".join(skills[:3]) if skills else "various technologies"
 
-    level = "fresher"
+    level = "AI & Data Science Student"
+    if "graduate" in text_lower or "completed" in text_lower:
+        level = "Graduate"
     if "intern" in text_lower:
-        level = "intern"
-    if "experience" in text_lower:
-        level = "experienced professional"
+        level = "AI Intern"
+    if "experience" in text_lower and len(re.findall(r"\d+\+? years?", text_lower)) > 0:
+        level = "Experienced Professional"
 
     return {
         "name": name,
@@ -262,35 +273,59 @@ def extract_basic_info(text, selected_role=None):
     }
 
 # ---------------- SELF INTRO ----------------
-def generate_self_intro(info):
+def generate_self_intro(info, style="Strong Professional"):
     skills_list = info.get("skills_full", [])
+    name = info.get("name", "the candidate")
+    role = info.get("role", "Web Development")
+    level = info.get("level", "fresher")
     
-    # Formulate a smooth sentence for skills
+    # Skills formatting
     if len(skills_list) > 1:
-        skills_text = ", ".join(skills_list[:5]) + f", and {skills_list[5] if len(skills_list) > 5 else skills_list[-1]}"
+        skills_text = ", ".join(skills_list[:3]) + f", and {skills_list[3] if len(skills_list) > 3 else skills_list[-1]}"
     elif skills_list:
         skills_text = skills_list[0]
     else:
         skills_text = "various emerging tech stacks"
         
-    level_str = info['level']
-    article = "an" if level_str.startswith(("a", "e", "i", "o", "u")) else "a"
+    article = "an" if level.startswith(("a", "e", "i", "o", "u")) else "a"
     
-    intro = (
-        f"Hello! My name is {info['name']}. "
-        f"I am {article} {level_str} with extensive technical expertise in {skills_text}. "
-    )
-    
-    if len(skills_list) >= 6:
-        intro += "I am also deeply familiar with several other tools across the modern software engineering stack. "
+    if style == "Jarvis Mode":
+        intro = (
+            f"Hello! My name is {name}. I am {article} {level} specializing in {role}. "
+            f"Key technical proficiencies include {skills_text}. "
+            f"Analysis suggests a high degree of aptitude for building impactful systems, taking ideas from concept to production. "
+        )
+        if 'score' in info:
+            intro += f"Jarvis has analyzed my resume and awarded it an overall quality score of {info['score']} out of 100. "
+        if 'ats_match' in info:
+            intro += f"Furthermore, my profile is assessed as a solid {info['ats_match']} percent match for the current targeted job requirements. "
+            
+        intro += "I am highly passionate about continuing to learn, adapting to new challenges, and applying my background to build real-world, efficient solutions."
+    elif style == "Short & Crisp":
+        intro = (
+            f"Hi, I'm {name}, {article} {level} specializing in {role}. "
+            f"I have hands-on experience in {skills_text}. I don't just learn concepts — I implement them."
+        )
+    elif style == "Ruthless Upgrade":
+        intro = (
+            f"Hi, I'm {name}. I'm {article} {level} focused on building real-world solutions using machine learning and full-stack development. "
+            f"I've already built systems like MERN-based portals and disease prediction models. I have an execution mindset: if it can be imagined, it can be built with {skills_text}. "
+            f"I take ideas from concept to production."
+        )
+    else: # Strong Professional (Default)
+        intro = (
+            f"Hello! My name is {name}. I am {article} {level} with extensive technical expertise in {skills_text}. "
+            f"I am also deeply familiar with several other tools across the modern software engineering stack. "
+            f"My primary focus revolves around {role}. "
+        )
+        if 'score' in info:
+            intro += f"Jarvis has analyzed my resume and awarded it an overall quality score of {info['score']} out of 100. "
+        if 'ats_match' in info:
+            intro += f"Furthermore, my profile is assessed as a solid {info['ats_match']} percent match for the current targeted job requirements. "
+            
+        intro += "I am highly passionate about continuing to learn, adapting to new challenges, and applying my background to build real-world, efficient solutions."
         
-    intro += f"My primary focus revolves around {info['role']}. "
-    
-    if 'score' in info:
-        intro += f"Jarvis has analyzed my resume and awarded it an overall quality score of {info['score']} out of 100. "
+    if 'score' in info and style == "Jarvis Mode":
+        intro += f" I have assigned a career-readiness score of {info['score']} percent to this profile."
         
-    if 'ats_match' in info:
-        intro += f"Furthermore, my profile is assessed as a solid {info['ats_match']} percent match for the current targeted job requirements. "
-        
-    intro += "I am highly passionate about continuing to learn, adapting to new challenges, and applying my background to build real-world, efficient solutions."
     return intro

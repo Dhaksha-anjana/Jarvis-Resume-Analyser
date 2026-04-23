@@ -15,7 +15,7 @@ from resume_utils import (
     extract_basic_info,
     generate_self_intro
 )
-from llm_utils import validate_api_key, generate_interview_questions, get_chat_response
+from llm_utils import validate_api_key, generate_interview_questions, get_chat_response, generate_styled_intro
 # ---------------- CONFIG ----------------
 st.set_page_config(
     page_title="Jarvis Resume AI",
@@ -52,28 +52,39 @@ def load_lottie(path):
 jarvis_lottie = load_lottie(os.path.join(LOTTIE_DIR, "jarvis.json"))
 voice_lottie = load_lottie(os.path.join(LOTTIE_DIR, "voice.json"))
 # ---------------- VOICE OUTPUT ----------------
-def speak_js(text):
+def speak_js(text, mode=None):
     # Strip markdown and escape quotes for JS safe parsing
     clean_text = re.sub(r'[*_#`]', '', text)
     clean_text = clean_text.replace('\n', ' ').replace('"', '\\"').replace("'", "\\'")
     
+    announcement = f"Initializing {mode} introduction, Sir." if mode else ""
+    
     js = f"""
-    <div style="display: flex; justify-content: flex-end; width: 100%;">
-        <button onclick="speak()" style="background-color: transparent; border: 1px solid #38bdf8; color: #38bdf8; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-family: sans-serif; font-size: 12px; font-weight: bold; transition: 0.3s;" onmouseover="this.style.backgroundColor='#38bdf8'; this.style.color='#0f172a'" onmouseout="this.style.backgroundColor='transparent'; this.style.color='#38bdf8'">
+    <div style="display: flex; justify-content: flex-end; align-items: center; gap: 10px; width: 100%;">
+        <span style="color: #64748b; font-size: 11px; font-family: sans-serif;">🎤 Say 'Introduction' to trigger</span>
+        <button id="speakBtn" onclick="speak()" style="background-color: transparent; border: 1px solid #38bdf8; color: #38bdf8; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-family: sans-serif; font-size: 12px; font-weight: bold; transition: 0.3s;" onmouseover="this.style.backgroundColor='#38bdf8'; this.style.color='#0f172a'" onmouseout="this.style.backgroundColor='transparent'; this.style.color='#38bdf8'">
             🔊 Listen to Jarvis
         </button>
     </div>
     <script>
     function speak() {{
         window.speechSynthesis.cancel();
-        var msg = new SpeechSynthesisUtterance("{clean_text}");
         
         var voices = window.speechSynthesis.getVoices();
-        var jarvis = voices.find(v => v.lang === 'en-GB' && v.name.includes('Male')) || 
-                     voices.find(v => v.lang === 'en-GB' && v.name.includes('Google UK English Male')) ||
-                     voices.find(v => v.lang === 'en-GB');
-                     
-        if (jarvis) msg.voice = jarvis;
+        var jarvisVoice = voices.find(v => v.lang === 'en-GB' && v.name.includes('Male')) || 
+                         voices.find(v => v.lang === 'en-GB' && v.name.includes('Google UK English Male')) ||
+                         voices.find(v => v.lang === 'en-GB');
+
+        if ("{announcement}") {{
+            var annMsg = new SpeechSynthesisUtterance("{announcement}");
+            if (jarvisVoice) annMsg.voice = jarvisVoice;
+            annMsg.rate = 1.0;
+            annMsg.pitch = 0.8;
+            window.speechSynthesis.speak(annMsg);
+        }}
+
+        var msg = new SpeechSynthesisUtterance("{clean_text}");
+        if (jarvisVoice) msg.voice = jarvisVoice;
         else msg.lang = 'en-GB';
         
         msg.rate = 1.0;
@@ -81,15 +92,18 @@ def speak_js(text):
         window.speechSynthesis.speak(msg);
     }}
     
-    // Attempt auto-play, but fallback to button if browser blocks it
+    // Voice Trigger logic disabled in browser to prevent overlap with Desktop Jarvis
+    // Say 'Introduction' into the terminal Jarvis instead.
+
+    // Attempt auto-play
     if (window.speechSynthesis.getVoices().length === 0) {{
-        window.speechSynthesis.onvoiceschanged = speak;
-    }} else {{
-        speak();
+        window.speechSynthesis.onvoiceschanged = () => {{
+             // speak(); // Disable auto-play to avoid overlapping with user intent
+        }};
     }}
     </script>
     """
-    st.components.v1.html(js, height=45)
+    st.components.v1.html(js, height=50)
 # ---------------- HEADER ----------------
 colA, colB = st.columns([1, 3])
 
@@ -154,15 +168,23 @@ if resume_file:
         info['ats_match'] = ats_data['total']
     
     cache_key = f"intro_{hash(resume_text)}"
+    # We will get intro_style in col2, but we need it for generation.
+    # To avoid double prompt, we can use a temporary key or just get it before the columns.
+    st.markdown("### 🤖 Jarvis Intelligence")
+    intro_style = st.select_slider("🎭 Intro Mode", options=["Jarvis Mode", "Strong Professional", "Short & Crisp", "Ruthless Upgrade"], value="Jarvis Mode")
+    
+    cache_key = f"intro_{hash(resume_text)}_{intro_style}"
+    
     if api_key:
         if cache_key not in st.session_state:
-            with st.spinner("Jarvis is reading the resume profile..."):
-                summary_prompt = "Provide a very concise, 3-sentence summary of this exact candidate. Explicitly list their technical skills (like MERN or Python), specific internships, past companies, and project names. Speak in the third-person about the candidate, written perfectly in the voice of J.A.R.V.I.S. from Iron Man, addressing your creator. Do not use any markdown formatting like asterisks."
-                res = get_chat_response(summary_prompt, resume_text, [], api_key, stream=False)
-                st.session_state[cache_key] = res.replace("*", "").replace("#", "")
+            with st.spinner(f"Jarvis is preparing your {intro_style} profile..."):
+                res = generate_styled_intro(intro_style, resume_text, api_key)
+                if "⚠️" in res: # API Error occurred (like Quota Exceeded)
+                    res = generate_self_intro(info, style=intro_style)
+                st.session_state[cache_key] = res
         intro_text = st.session_state[cache_key]
     else:
-        intro_text = generate_self_intro(info)
+        intro_text = generate_self_intro(info, style=intro_style)
     col1, col2, col3 = st.columns([1.2, 1.5, 1.2])
     # -------- COLUMN 1 : SKILLS --------
     with col1:
@@ -242,7 +264,7 @@ if resume_file:
             st.progress(ats_data["keyword_match"]/20, text=f"Keywords ({ats_data['keyword_match']}/20%)")
             st.progress(ats_data["action_metrics"]/20, text=f"Action Verbs/Metrics ({ats_data['action_metrics']}/20%)")
             st.progress(ats_data["section_match"]/20, text=f"Formatting ({ats_data['section_match']}/20%)")
-        st.subheader("🧠 AI Introduction")
+        st.subheader("🧠 Generated Introduction")
         st.success(intro_text)
         
         st.download_button(
@@ -253,7 +275,7 @@ if resume_file:
             type="primary"
         )
         st_lottie(voice_lottie, height=90, key="voice")
-        speak_js(intro_text)
+        speak_js(intro_text, mode=intro_style)
         with open(INTRO_PATH, "w", encoding="utf-8") as f:
             f.write(intro_text)
         st.toast("Introduction saved for Jarvis 🎤", icon="✅")

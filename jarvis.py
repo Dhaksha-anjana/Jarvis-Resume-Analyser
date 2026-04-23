@@ -29,23 +29,22 @@ r = sr.Recognizer()
 r.pause_threshold = 0.8
 r.energy_threshold = 300
 
-with sr.Microphone() as source:
-    print("Calibrating microphone...")
-    r.adjust_for_ambient_noise(source, duration=1)
+try:
+    with sr.Microphone() as source:
+        print("Calibrating microphone...")
+        r.adjust_for_ambient_noise(source, duration=1)
+except Exception as e:
+    print(f"⚠️ Warning: No microphone detected. Voice commands will be disabled. Error: {e}")
 
 def take_command():
-    with sr.Microphone() as source:
-        print("Listening...")
-        try:
-            audio = r.listen(source, timeout=5, phrase_time_limit=6)
-        except sr.WaitTimeoutError:
-            return ""
-
     try:
-        command = r.recognize_google(audio)
-        print("User:", command)
-        return command.lower()
-    except:
+        with sr.Microphone() as source:
+            print("Listening...")
+            audio = r.listen(source, timeout=3, phrase_time_limit=5)
+            command = r.recognize_google(audio)
+            print("User:", command)
+            return command.lower()
+    except Exception:
         return ""
 
 # ---------------- JARVIS UI ----------------
